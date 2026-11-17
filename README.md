@@ -4,15 +4,15 @@
 [![rank](https://make.fun/badge/token-radar-01/reinaldyalt/token-launch-radar/rank.svg)](https://make.fun/c/token-radar-01)
 [![reward](https://make.fun/badge/token-radar-01/reinaldyalt/token-launch-radar/reward.svg)](https://make.fun/c/token-radar-01)
 
-A token launch radar: it reads a sealed DefiLlama snapshot of 758 protocols, finds the ones
-that record no token, ranks them by the implied value of the token they might one day issue,
-and shows a reader how to farm each one before it launches. Built for the
+A token launch radar: it takes a sealed DefiLlama snapshot of 758 protocols, picks out the
+ones that record no token, ranks them by the implied value of the token they might one day
+issue, and shows a reader how to farm each one before it launches. Built for the
 [token-radar-01 bounty](https://make.fun/bounty/token-radar-01) on make.fun.
 
 ## What it does
 
 - **Board** — 198 pre-token protocols ranked by implied value: the full 40-protocol watchlist
-  (TVL of $50M+ with no token on record) plus 158 more pre-token protocols the radar finds
+  (TVL of $50M+ with no token on record) plus 158 more pre-token protocols the radar spots
   early, down to the smallest the snapshot tracks.
 - **Value model (radar-2)** — each protocol is priced off its own category's live-token peers:
   the median market-cap-to-TVL ratio of the tokens its category already trades at, blended
@@ -31,7 +31,7 @@ breakdown and its farm plan.
 ## Run it
 
 ```sh
-mkdir -p out && MAKEFUN_OUTPUT_DIR=out node main.ts --input <path to snapshot.json>
+mkdir -p out && MAKEFUN_OUTPUT_DIR=out node main.ts --input <snapshot path>
 ```
 
 `main.ts` (Node 22, standard library only) reads the snapshot, writes `board.json` and
