@@ -1,18 +1,19 @@
-// Token Radar's model (radar-2): one snapshot of the protocol universe in, one ranked board out.
+// Token Launch Radar's scoring model (radar-2).
 //
-// The board covers every slug in the snapshot's watchlist (the floor, never a ceiling) and every
-// other pre-token protocol the house's own exclusion rule keeps: no token on record, not a wrapped,
-// staked or bridged product of a token that already trades, not an exchange, not a versioned pool.
-// That is 198 rows on this snapshot: 40 watchlist, 20 more at or above the floor, 138 early rows
-// below it. A protocol is pre-token when its record carries no token (no market cap, no CoinGecko
-// id, no symbol); the snapshot's live-token protocols are kept apart and shown with the market's
-// own values, never mixed into the ranked board.
+// One sealed DefiLlama snapshot goes in, one ranked board comes out. The board covers every
+// slug on the snapshot's watchlist (the floor, never a ceiling) plus every other pre-token
+// protocol the house exclusion rule keeps: no token on record, not a wrapped, staked or bridged
+// product of a token that already trades, not an exchange, not a versioned pool. On this
+// snapshot that is 198 rows: 40 watchlist, 20 more at or above the floor, 138 early rows below
+// it. A protocol counts as pre-token when its record carries no token at all: no market cap,
+// no CoinGecko id, no symbol. Protocols whose tokens already trade are kept apart and shown
+// with the market's own values, never mixed into the ranked board.
 //
-// Implied value follows only from the snapshot's own figures, through a peer multiple:
+// Implied value comes only from the snapshot's own figures, through a peer multiple:
 //
 //   peerMultiple(category) = median(mcap_usd / tvl_usd) over the live-token protocols in the
-//     same category (at least 3 peers), blended toward the global median when the category has
-//     fewer peers, clamped to [0.05, 1.00]. The medians are computed from this snapshot at run
+//     same category (needs at least 3 peers), blended toward the global median when the category
+//     has fewer peers, clamped to [0.05, 1.00]. Medians are computed from this snapshot at run
 //     time, never from a hand-kept list of names.
 //   launchDiscount = 0.50   (a token launches below its mature peers' multiple)
 //   growthMult     = 1 + clamp(change_7d, -60, 120) / 100 * 0.50
@@ -23,7 +24,7 @@
 //
 // No protocol name is ever special-cased: the same function scores every row.
 
-/** The snapshot's protocol entry: exactly the ten fields the sealed input carries. */
+/** One protocol entry in the snapshot: exactly the ten fields the sealed input carries. */
 export interface SnapshotProtocol {
   slug: string;
   name: string;
@@ -46,7 +47,7 @@ export interface Snapshot {
   watchlist: string[];
 }
 
-/** The model's constants, as the dashboard states them and the sandbox may change them. */
+/** The model's tunable constants, as the dashboard states them and the sandbox may change them. */
 export interface ModelConstants {
   launch_discount: number;
   peer_floor: number;
@@ -87,7 +88,7 @@ export const MODEL_VERSION = 'radar-2';
 /** How many live-token protocols the Live token view carries, by market cap. */
 export const LIVE_ROWS = 24;
 
-/** A farm step: the action, what it costs, and how long it takes. */
+/** One step of a farm plan: the action, what it costs, and how long it takes. */
 export interface FarmStep {
   text: string;
   cost: string;
@@ -124,7 +125,7 @@ export interface BoardRow {
   farm_steps: string[];
 }
 
-/** The dashboard's compact view of one row, with farm plans generated in the page. */
+/** The dashboard's compact view of one row; the farm plan is generated in the page. */
 export interface RadarRow {
   rank: number;
   slug: string;
@@ -145,7 +146,7 @@ export interface RadarRow {
   chain_multiplier: number;
 }
 
-/** A live-token protocol: it already trades, so the board shows the market's own value, not a model's. */
+/** A live-token protocol: it already trades, so the board shows the market's own value. */
 export interface LiveRow {
   slug: string;
   name: string;
@@ -182,18 +183,21 @@ export class SnapshotError extends Error {
 
 const DAY_MS = 86_400_000;
 
+/** Round to four decimals: the board and the page both read the rounded value. */
+const round4 = (n: number): number => Math.round(n * 1e4) / 1e4;
+
 /** A finite number, else `fallback`. */
 function finite(value: unknown, fallback: number): number {
   return typeof value === 'number' && Number.isFinite(value) ? value : fallback;
 }
 
-/** A whole day count from `from` to `to`, clamped at zero; null when either date is absent or bad. */
+/** Whole days from `from` to `to`, clamped at zero; null when either date is absent or bad. */
 export function ageDays(asOf: string, listedAt: string | null): number | null {
   if (listedAt === null) return null;
-  const a = Date.parse(`${asOf}T00:00:00Z`);
-  const b = Date.parse(`${listedAt}T00:00:00Z`);
-  if (!Number.isFinite(a) || !Number.isFinite(b)) return null;
-  return Math.max(0, Math.floor((a - b) / DAY_MS));
+  const start = Date.parse(`${asOf}T00:00:00Z`);
+  const listed = Date.parse(`${listedAt}T00:00:00Z`);
+  if (!Number.isFinite(start) || !Number.isFinite(listed)) return null;
+  return Math.max(0, Math.floor((start - listed) / DAY_MS));
 }
 
 /** The median of a sorted array, or null when it is empty. */
@@ -204,8 +208,9 @@ function median(sorted: number[]): number | null {
 }
 
 /**
- * The peer multiples: for every category, the median mcap/TVL of the live-token protocols in it,
- * plus the global median across all live-token protocols. Computed from the snapshot at run time.
+ * The peer multiples: for every category, the median mcap/TVL of the live-token protocols in
+ * it, plus the global median across all live-token protocols. Computed from the snapshot at
+ * run time.
  */
 export interface PeerTable {
   byCategory: Map<string, { multiple: number; count: number }>;
@@ -236,8 +241,9 @@ export function peerTable(protocols: SnapshotProtocol[]): PeerTable {
 }
 
 /**
- * One category's peer multiple: the category median when it has enough peers, blended toward the
- * global median when it has few, the global median when it has none; then clamped.
+ * One category's peer multiple: the category median when it has enough peers, blended toward
+ * the global median when it has few, the global median when it has none; then clamped and
+ * rounded, so the board and the page read the same value.
  */
 export function peerMultiple(category: string | null, peers: PeerTable, model: ModelConstants): { multiple: number; count: number } {
   const entry = peers.byCategory.get(category ?? 'Other');
@@ -252,8 +258,6 @@ export function peerMultiple(category: string | null, peers: PeerTable, model: M
     multiple = peers.global;
   }
   multiple = Math.min(model.peer_cap, Math.max(model.peer_floor, multiple));
-  // Round the peer multiple before pricing: the board and the page both read the rounded
-  // value, so the page's recomputation matches board.json exactly.
   multiple = round4(multiple);
   return { multiple, count };
 }
@@ -299,10 +303,10 @@ export function isPreToken(p: SnapshotProtocol): boolean {
 }
 
 /**
- * Whether a protocol is one the board may rank: pre-token, and not a wrapped, staked or bridged
- * product of a token that already trades, not an exchange, not a versioned pool. This is the
- * watchlist's own exclusion rule, applied to the whole pre-token universe so the early radar
- * never promotes a product whose underlying token already trades.
+ * Whether a protocol is one the board may rank: pre-token, and not a wrapped, staked or
+ * bridged product of a token that already trades, not an exchange, not a versioned pool. This
+ * is the watchlist's own exclusion rule, applied to the whole pre-token universe so the early
+ * radar never promotes a product whose underlying token already trades.
  */
 export function isRankable(p: SnapshotProtocol): boolean {
   return (
@@ -314,7 +318,7 @@ export function isRankable(p: SnapshotProtocol): boolean {
   );
 }
 
-/** The snapshot's protocol by slug. */
+/** The snapshot's protocols by slug. */
 function bySlug(protocols: SnapshotProtocol[]): Map<string, SnapshotProtocol> {
   return new Map(protocols.map((p) => [p.slug, p]));
 }
@@ -371,8 +375,6 @@ export function buildBoard(snapshot: Snapshot, model: ModelConstants = MODEL): B
     farm_steps: farmSteps(s.p, s.age).map(stepText),
   }));
 }
-
-const round4 = (n: number): number => Math.round(n * 1e4) / 1e4;
 
 /** A step as one string: its action, then its cost and time, within the gate's 20..600 characters. */
 export function stepText(step: FarmStep): string {
@@ -439,8 +441,9 @@ function weeklyFor(p: SnapshotProtocol): string {
 }
 
 /**
- * A protocol's farm plan: seven steps, each an action with a cost and a time. The plan is derived
- * from the protocol's own record (category, chains, TVL, age), never from a hand-written list of names.
+ * A protocol's farm plan: seven steps, each an action with a cost and a time. The plan is
+ * derived from the protocol's own record (category, chains, TVL, age), never from a hand-written
+ * list of names.
  */
 export function farmSteps(p: SnapshotProtocol, age: number | null): FarmStep[] {
   const chain = chainOf(p);

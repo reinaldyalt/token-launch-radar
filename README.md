@@ -6,7 +6,8 @@
 
 A token launch radar: it reads a sealed DefiLlama snapshot of 758 protocols, finds the ones
 that record no token, ranks them by the implied value of the token they might one day issue,
-and shows a reader how to farm each one before it launches.
+and shows a reader how to farm each one before it launches. Built for the
+[token-radar-01 bounty](https://make.fun/bounty/token-radar-01) on make.fun.
 
 ## What it does
 
